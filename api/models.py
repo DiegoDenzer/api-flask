@@ -1,3 +1,4 @@
+
 from api.run import db
 from passlib.hash import pbkdf2_sha256 as sha256
 
@@ -15,9 +16,6 @@ class RevokedTokenModel(db.Model):
     def is_jti_blacklisted(cls, jti):
         query = cls.query.filter_by(jti=jti).first()
         return bool(query)
-
-
-
 
 class UserModel(db.Model):
     __tablename__ = 'users'
