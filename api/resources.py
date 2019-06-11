@@ -1,11 +1,10 @@
 from flask_restful import Resource, reqparse
-
-from api.models import UserModel
+from api.models import UserModel, RevokedTokenModel
+from flask_jwt_extended import (create_access_token, create_refresh_token, jwt_required, jwt_refresh_token_required, get_jwt_identity, get_raw_jwt)
 
 parser = reqparse.RequestParser()
 parser.add_argument('username', help = 'This field cannot be blank', required= True)
 parser.add_argument('password', help = 'This field cannot be blank', required= True)
-
 
 
 class UserRegistration(Resource):
@@ -19,12 +18,16 @@ class UserRegistration(Resource):
 
         new_user = UserModel(
             username=data['username'],
-            password=data['password']
+            password= UserModel.generate_hash(data['password'])
         )
         try:
             new_user.save_to_db()
+            access_token = create_access_token(identity=data['username'])
+            refresh_token = create_refresh_token(identity=data['username'])
             return {
-                'message': f"User {data['username']} was created."
+                'message': f"User {data['username']} was created.",
+                'access_token': access_token,
+                'refresh_token': refresh_token
             }, 201
         except:
             return {
@@ -42,9 +45,13 @@ class UserLogin(Resource):
                 'message' : f"User {data['username']} doesn\'t exist"
             }, 400
 
-        if data['password'] == current_user.password:
+        if UserModel.verify_hash(data['password'], current_user.password):
+            access_token = create_access_token(identity=data['username'])
+            refresh_token = create_refresh_token(identity=data['username'])
             return {
-                'message': f'Logged in as {current_user.username}'
+                'message': f'Logged in as {current_user.username}',
+                'access_token': access_token,
+                'refresh_token': refresh_token
             }, 200
         else:
             return {
@@ -53,18 +60,35 @@ class UserLogin(Resource):
 
 
 class UserLogoutAccess(Resource):
+    @jwt_required
     def post(self):
-        return {'message': 'User logout'}
+        jti = get_raw_jwt()['jti']
+        try:
+            revoked_token = RevokedTokenModel(jti = jti)
+            revoked_token.add()
+            return {'message': 'Access token has been revoked'}, 200
+        except:
+            return {'message': 'Something went wrong'}, 500
 
 
 class UserLogoutRefresh(Resource):
+    @jwt_refresh_token_required
     def post(self):
-        return {'message': 'User logout'}
+        jti = get_raw_jwt()['jti']
+        try:
+            revoked_token = RevokedTokenModel(jti = jti)
+            revoked_token.add()
+            return {'message': 'Refresh token has been revoked'}, 200
+        except:
+            return {'message': 'Something went wrong'}, 500
 
 
 class TokenRefresh(Resource):
+    @jwt_refresh_token_required
     def post(self):
-        return {'message': 'Token refresh'}
+        current_user = get_jwt_identity()
+        access_token = create_access_token(identity=current_user)
+        return {'access_token': access_token}
 
 
 class AllUsers(Resource):
@@ -76,6 +100,7 @@ class AllUsers(Resource):
 
 
 class SecretResource(Resource):
+    @jwt_required
     def get(self):
         return {
             'answer': 42
